@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian Terminal: a three.js tactical FPS</title>
+<style>
+  :root {
+    --canvas: #1a1d22;
+    --surface: #20242b;
+    --hairline: #2f353d;
+    --ink: #e9e6df;
+    --muted: #98a0a8;
+    --accent: #f0a830;
+    --danger: #d84a35;
+    --strike: #c25a3a;
+    --warden: #3a8a94;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  .readout { font-family: var(--font-readout); }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%); }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .88; }
+  #crosshair i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 7px; }
+
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 110ms linear; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker i { position: absolute; background: var(--accent); }
+  #hitmarker i:nth-child(1), #hitmarker i:nth-child(2) { left: 12px; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(1) { top: 0; } #hitmarker i:nth-child(2) { bottom: 0; }
+  #hitmarker i:nth-child(3), #hitmarker i:nth-child(4) { top: 12px; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(3) { left: 0; } #hitmarker i:nth-child(4) { right: 0; }
+
+  #vignette { position: fixed; inset: 0; box-shadow: inset 0 0 120px rgba(0,0,0,0.55); }
+
+  #hud-bottomleft { position: fixed; left: 28px; bottom: 22px; display: grid; gap: 6px; }
+  #hud-health { font-family: var(--font-readout); font-size: 52px; line-height: 1; letter-spacing: -0.03em; }
+  #hud-armor { font-family: var(--font-readout); font-size: 15px; color: var(--muted); }
+  #hud-money { font-family: var(--font-readout); font-size: 15px; color: var(--accent); }
+
+  #hud-bottomright { position: fixed; right: 28px; bottom: 22px; text-align: right; }
+  #hud-weapon { font-family: var(--font-readout); font-size: 14px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+  #hud-ammo { font-family: var(--font-readout); font-size: 52px; line-height: 1; letter-spacing: -0.03em; }
+  #hud-reserve { font-size: 16px; color: var(--muted); }
+  #hud-ammo.empty #hud-mag { color: var(--danger); }
+
+  #hud-top { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); text-align: center; display: grid; gap: 4px; }
+  #hud-score { font-family: var(--font-readout); font-size: 20px; }
+  #hud-score .s { color: var(--strike); } #hud-score .w { color: var(--warden); }
+  #hud-clock { font-family: var(--font-readout); font-size: 30px; letter-spacing: 0.02em; }
+  #hud-phase { font-family: var(--font-readout); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.14em; }
+
+  #hud-bombbar { position: fixed; left: 50%; bottom: 12%; transform: translateX(-50%); width: 220px; height: 8px; background: rgba(0,0,0,0.5); border: 1px solid var(--hairline); border-radius: 4px; overflow: hidden; }
+  #hud-bombfill { height: 100%; width: 0%; background: var(--danger); }
+  #hud-bombbar span { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-readout); font-size: 9px; color: var(--ink); letter-spacing: 0.2em; }
+
+  #hud-feed { position: fixed; right: 28px; top: 18px; display: grid; gap: 4px; justify-items: end; font-family: var(--font-readout); font-size: 12px; color: var(--muted); }
+  #hud-feed b.s { color: var(--strike); } #hud-feed b.w { color: var(--warden); }
+
+  #hud-minimap { position: fixed; left: 28px; top: 18px; width: 172px; height: 172px; border: 1px solid var(--hairline); border-radius: 6px; }
+
+  #hud-buy {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(560px, 94vw); padding: 20px 24px;
+    background: color-mix(in srgb, var(--canvas) 92%, transparent);
+    border: 1px solid var(--hairline); border-radius: 10px;
+    pointer-events: none;
+  }
+  #hud-buy[hidden] { display: none; }
+  #hud-buy h2 { margin: 0 0 12px; font-size: 15px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  #hud-buy table { width: 100%; border-collapse: collapse; font-family: var(--font-readout); font-size: 14px; }
+  #hud-buy td { padding: 7px 4px; border-top: 1px solid var(--hairline); }
+  #hud-buy td:first-child { color: var(--ink); }
+  #hud-buy td:nth-child(2) { color: var(--muted); }
+  #hud-buy td:last-child { text-align: right; color: var(--accent); }
+  #hud-buy .own { text-align: center; color: var(--muted); font-family: var(--font-readout); font-size: 12px; margin-top: 12px; }
+
+  #hud-scoreboard {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    padding: 24px 30px; text-align: center;
+    background: color-mix(in srgb, var(--canvas) 94%, transparent);
+    border: 1px solid var(--hairline); border-radius: 10px;
+  }
+  #hud-scoreboard[hidden] { display: none; }
+  #hud-scoreboard h1 { margin: 0 0 6px; font-size: 30px; font-weight: 500; letter-spacing: -0.02em; }
+  #hud-scoreboard p { margin: 0 0 18px; color: var(--muted); font-size: 15px; }
+  #hud-scoreboard .final { font-family: var(--font-readout); font-size: 40px; }
+
+  #hint { position: fixed; left: 50%; top: 62%; transform: translateX(-50%); font-family: var(--font-readout); font-size: 13px; color: var(--accent); letter-spacing: 0.06em; }
+
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--canvas) 82%, transparent); }
+  .overlay[hidden] { display: none; }
+  .panel { width: min(460px, 100%); padding: 30px 32px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; }
+  .panel h1 { margin: 0 0 8px; font-size: 30px; line-height: 1.15; font-weight: 500; letter-spacing: -0.02em; }
+  .panel p { margin: 0 0 22px; max-width: 48ch; font-size: 15px; line-height: 1.5; color: var(--muted); }
+  #play { font: inherit; font-weight: 500; padding: 11px 18px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--canvas); cursor: pointer; pointer-events: auto; }
+  #play:hover { background: var(--ink); border-color: var(--ink); }
+  .keys { margin: 20px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  .keys li { display: flex; align-items: center; gap: 8px; }
+  .keys kbd { min-width: 26px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 3px; font-family: var(--font-readout); font-size: 11px; color: var(--ink); text-align: center; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="vignette"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+  <div id="hud-bottomleft">
+    <div id="hud-health">100</div>
+    <div id="hud-armor">ARM 0</div>
+    <div id="hud-money">$800</div>
+  </div>
+  <div id="hud-bottomright">
+    <div id="hud-weapon">P9 SIDEARM</div>
+    <div id="hud-ammo"><span id="hud-mag">12</span> <span id="hud-reserve">/ 48</span></div>
+  </div>
+
+  <div id="hud-top">
+    <div id="hud-score"><span class="s">STR 0</span> · <span class="w">0 WRD</span></div>
+    <div id="hud-clock">1:45</div>
+    <div id="hud-phase">match begins</div>
+  </div>
+
+  <canvas id="hud-minimap" width="172" height="172"></canvas>
+  <div id="hud-feed"></div>
+  <div id="hud-bombbar" hidden><span>SPIKE</span><div id="hud-bombfill"></div></div>
+  <div id="hint" hidden></div>
+</div>
+
+<div id="hud-buy" hidden>
+  <h2>Buy</h2>
+  <table>
+    <tr><td>1 — K4 Cicada</td><td>SMG · fast, mid damage</td><td>$1050</td></tr>
+    <tr><td>2 — Vx-7 Meridian</td><td>Karabin · accurate, strong</td><td>$2700</td></tr>
+    <tr><td>3 — LR Kestrel</td><td>Marksman · one-tap</td><td>$4300</td></tr>
+    <tr><td>4 — Vest</td><td>Armour 100</td><td>$650</td></tr>
+    <tr><td>5 — F-1 Frag</td><td>Grenade</td><td>$300</td></tr>
+    <tr><td>6 — Defuse kit</td><td>Warden only · 6 s → 3 s</td><td>$400</td></tr>
+  </table>
+  <div class="own">press the number again or <b>B</b> to close · buys apply at the round start</div>
+</div>
+
+<div id="hud-scoreboard" hidden>
+  <h1 id="sb-title">Strike wins</h1>
+  <p id="sb-reason"></p>
+  <div class="final" id="sb-score"></div>
+</div>
+
+<div id="overlay" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <h1 id="overlay-title">Meridian Terminal</h1>
+    <p id="overlay-copy">A five-a-side tactical shooter at a dusk freight dock. Buy, push a lane, plant or defuse the spike.</p>
+    <button id="play" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move · <kbd>Shift</kbd> walk · <kbd>Ctrl</kbd> crouch</li>
+      <li><kbd>Mouse</kbd> Look · <kbd>Click</kbd> Fire · <kbd>R</kbd> Reload</li>
+      <li><kbd>E</kbd> Plant / defuse / pick up</li>
+      <li><kbd>B</kbd> Buy menu · <kbd>1</kbd>–<kbd>3</kbd> buy gun · <kbd>G</kbd> frag</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
