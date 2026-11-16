@@ -18,6 +18,13 @@ import { buildDossier } from './vendor/makefun-threejs.ts';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
+// Fail early with an actionable error instead of emitting an incomplete submission.
+for (const requiredInput of ['game/index.html', 'screenshots/1-cover.jpg', 'screenshots/2-play.jpg', 'screenshots/3-spike.jpg']) {
+  if (!existsSync(join(here, requiredInput))) {
+    throw new Error(`Meridian Terminal submission input missing: ${requiredInput}`);
+  }
+}
+
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
